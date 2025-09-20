@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steganography App</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" />
+</head>
+<body>
+    <div id="root"></div>
+    
+    <!-- React and ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- React Router -->
+    <script src="https://unpkg.com/react-router-dom@6/dist/umd/react-router-dom.production.min.js"></script>
+    
+    <!-- Material UI -->
+    <script src="https://unpkg.com/@mui/material@5.13.0/umd/material-ui.production.min.js"></script>
+    
+    <!-- Axios -->
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    
+    <!-- App Scripts -->
+    <script>
+        // Set up axios defaults
+        axios.defaults.baseURL = '/api';
+        axios.defaults.headers.common['Content-Type'] = 'application/json';
+        
+        // Helper function to handle file uploads
+        const uploadFile = async (file, operation, message, keyId) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('operation', operation);
+            formData.append('key_id', keyId);
+            if (message) {
+                formData.append('message', message);
+            }
+            
+            try {
+                const response = await axios.post('/files/process/', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+                return response.data;
+            } catch (error) {
+                console.error('File upload error:', error);
+                throw error;
+            }
+        };
+        
+        // Authentication context
+        const AuthContext = React.createContext();
+        
+        function AuthProvider({ children }) {
+            const [user, setUser] = React.useState(null);
+            const [loading, setLoading] = React.useState(true);
+            
+            React.useEffect(() => {
+                // Check if user is logged in
+                const token = localStorage.getItem('token');
+                if (token) {
+                    axios.defaults.headers.common['Authorization'] = `Token ${token}`;
+                    axios.get('/auth/user/')
+                        .then(response => {
+                            setUser(response.data);
+                            setLoading(false);
+                        })
+                        .catch(() => {
+                            localStorage.removeItem('token');
+                            delete axios.defaults.headers.common['Authorization'];
+                            setLoading(false);
+                        });
+                } else {
+                    setLoading(false);
+                }
+            }, []);
+            
+            const login = async (username, password) => {
+                try {
+                    const response = await axios.post('/auth/login/', { username, password });
+                    localStorage.setItem('token', response.data.token);
+                    axios.defaults.headers.common['Authorization'] = `Token ${response.data.token}`;
+                    setUser(response.data.user);
+                    return true;
+                } catch (error) {
+                    console.error('Login error:', error);
+                    return false;
+                }
+            };
+            
+            const register = async (username, email, password) => {
+                try {
+                    const response = await axios.post('/auth/register/', { username, email, password });
+                    localStorage.setItem('token', response.data.token);
+                    axios.defaults.headers.common['Authorization'] = `Token ${response.data.token}`;
+                    setUser(response.data.user);
+                    return true;
+                } catch (error) {
+                    console.error('Registration error:', error);
+                    return false;
+                }
+            };
+            
+            const logout = () => {
+                localStorage.removeItem('token');
+                delete axios.defaults.headers.common['Authorization'];
+                setUser(null);
+            };
+            
+            return React.createElement(AuthContext.Provider, 
+                { value: { user: user, login: login, register: register, logout: logout, loading: loading } },
+                children
+            );
+        }
+        
+        // Components
+        const { AppBar, Toolbar, Typography, Button, Container, Paper, TextField, Box, CircularProgress, Card, CardContent, CardActions, Grid } = MaterialUI;
+        const { BrowserRouter, Routes, Route, Link, useNavigate, Navigate } = ReactRouterDOM;
+        
+        // Navbar Component
+        function Navbar() {
+            const { user, logout } = React.useContext(AuthContext);
+            const navigate = useNavigate();
+            
+            return (
+                <AppBar position="static">
+                    <Toolbar>
+                        <Typography variant="h6" style={{ flexGrow: 1 }}>
+                            Steganography App
+                        </Typography>
+                        {user ? (
+                            <>
+                                <Button color="inherit" component={Link} to="/">Dashboard</Button>
+                                <Button color="inherit" component={Link} to="/upload">Upload</Button>
+                                <Button color="inherit" component={Link} to="/files">Files</Button>
+                                <Button color="inherit" component={Link} to="/keys">Keys</Button>
+                                <Button color="inherit" onClick={() => { logout(); navigate('/login'); }}>Logout</Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button color="inherit" component={Link} to="/login">Login</Button>
+                                <Button color="inherit" component={Link} to="/register">Register</Button>
+                            </>
+                        )}
+                    </Toolbar>
+                </AppBar>
+            );
+        }
+        
+        // Login Component
+        function Login() {
+            const [username, setUsername] = React.useState('');
+            const [password, setPassword] = React.useState('');
+            const [error, setError] = React.useState('');
+            const [loading, setLoading] = React.useState(false);
+            const { login } = React.useContext(AuthContext);
+            const navigate = useNavigate();
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                
+                if (!username || !password) {
+                    setError('Please enter both username and password');
+                    setLoading(false);
+                    return;
+                }
+                
+                const success = await login(username, password);
+                if (success) {
+                    navigate('/');
+                } else {
+                    setError('Invalid credentials');
+                }
+                setLoading(false);
+            };
+            
+            return (
+                <Container maxWidth="sm" style={{ marginTop: '2rem' }}>
+                    <Paper style={{ padding: '2rem' }}>
+                        <Typography variant="h4" align="center" gutterBottom>Login</Typography>
+                        {error && <Typography color="error" align="center">{error}</Typography>}
+                        <form onSubmit={handleSubmit}>
+                            <TextField
+                                label="Username"
+                                fullWidth
+                                margin="normal"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                            />
+                            <TextField
+                                label="Password"
+                                type="password"
+                                fullWidth
+                                margin="normal"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                            />
+                            <Box mt={2} display="flex" justifyContent="center">
+                                <Button
+                                    type="submit"
+                                    variant="contained"
+                                    color="primary"
+                                    disabled={loading}
+                                >
+                                    {loading ? <CircularProgress size={24} /> : 'Login'}
+                                </Button>
+                            </Box>
+                            <Box mt={2} textAlign="center">
+                                <Typography>
+                                    Don't have an account? <Link to="/register">Register</Link>
+                                </Typography>
+                            </Box>
+                        </form>
+                    </Paper>
+                </Container>
+            );
+        }
+        
+        // Register Component
+        function Register() {
+            const [username, setUsername] = React.useState('');
+            const [email, setEmail] = React.useState('');
+            const [password, setPassword] = React.useState('');
+            const [confirmPassword, setConfirmPassword] = React.useState('');
+            const [error, setError] = React.useState('');
+            const [loading, setLoading] = React.useState(false);
+            const { register } = React.useContext(AuthContext);
+            const navigate = useNavigate();
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                
+                if (!username || !email || !password || !confirmPassword) {
+                    setError('Please fill in all fields');
+                    setLoading(false);
+                    return;
+                }
+                
+                if (password !== confirmPassword) {
+                    setError('Passwords do not match');
+                    setLoading(false);
+                    return;
+                }
+                
+                const success = await register(username, email, password);
+                if (success) {
+                    navigate('/');
+                } else {
+                    setError('Registration failed');
+                }
+                setLoading(false);
+            };
+            
+            return (
+                <Container maxWidth="sm" style={{ marginTop: '2rem' }}>
+                    <Paper style={{ padding: '2rem' }}>
+                        <Typography variant="h4" align="center" gutterBottom>Register</Typography>
+                        {error && <Typography color="error" align="center">{error}</Typography>}
+                        <form onSubmit={handleSubmit}>
+                            <TextField
+                                label="Username"
+                                fullWidth
+                                margin="normal"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                            />
+                            <TextField
+                                label="Email"
+                                type="email"
+                                fullWidth
+                                margin="normal"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                            />
+                            <TextField
+                                label="Password"
+                                type="password"
+                                fullWidth
+                                margin="normal"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                            />
+                            <TextField
+                                label="Confirm Password"
+                                type="password"
+                                fullWidth
+                                margin="normal"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                            />
+                            <Box mt={2} display="flex" justifyContent="center">
+                                <Button
+                                    type="submit"
+                                    variant="contained"
+                                    color="primary"
+                                    disabled={loading}
+                                >
+                                    {loading ? <CircularProgress size={24} /> : 'Register'}
+                                </Button>
+                            </Box>
+                            <Box mt={2} textAlign="center">
+                                <Typography>
+                                    Already have an account? <Link to="/login">Login</Link>
+                                </Typography>
+                            </Box>
+                        </form>
+                    </Paper>
+                </Container>
+            );
+        }
+        
+        // Dashboard Component
+        function Dashboard() {
+            const { user } = React.useContext(AuthContext);
+            const [stats, setStats] = React.useState({ files: 0, keys: 0 });
+            
+            React.useEffect(() => {
+                if (user) {
+                    // Fetch user stats
+                    axios.get('/user/stats/')
+                        .then(response => {
+                            setStats(response.data);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching stats:', error);
+                        });
+                }
+            }, [user]);
+            
+            if (!user) {
+                return <Navigate to="/login" />;
+            }
+            
+            return (
+                <Container maxWidth="md" style={{ marginTop: '2rem' }}>
+                    <Typography variant="h4" gutterBottom>Welcome, {user.username}!</Typography>
+                    
+                    <Grid container spacing={3} style={{ marginTop: '1rem' }}>
+                        <Grid item xs={12} md={6}>
+                            <Card>
+                                <CardContent>
+                                    <Typography variant="h5" component="div">Your Files</Typography>
+                                    <Typography variant="h3" color="primary">{stats.files}</Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Total files you've uploaded
+                                    </Typography>
+                                </CardContent>
+                                <CardActions>
+                                    <Button size="small" component={Link} to="/files">View Files</Button>
+                                </CardActions>
+                            </Card>
+                        </Grid>
+                        
+                        <Grid item xs={12} md={6}>
+                            <Card>
+                                <CardContent>
+                                    <Typography variant="h5" component="div">Your Keys</Typography>
+                                    <Typography variant="h3" color="primary">{stats.keys}</Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Encryption keys you've created
+                                    </Typography>
+                                </CardContent>
+                                <CardActions>
+                                    <Button size="small" component={Link} to="/keys">Manage Keys</Button>
+                                </CardActions>
+                            </Card>
+                        </Grid>
+                        
+                        <Grid item xs={12}>
+                            <Card style={{ marginTop: '1rem' }}>
+                                <CardContent>
+                                    <Typography variant="h5" component="div">Quick Actions</Typography>
+                                    <Box display="flex" justifyContent="space-around" mt={2}>
+                                        <Button variant="contained" color="primary" component={Link} to="/upload">
+                                            Upload New File
+                                        </Button>
+                                        <Button variant="contained" color="secondary" component={Link} to="/keys">
+                                            Generate New Key
+                                        </Button>
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    </Grid>
+                </Container>
+            );
+        }
+        
+        // FileUpload Component
+        function FileUpload() {
+            const { user } = React.useContext(AuthContext);
+            const [file, setFile] = React.useState(null);
+            const [message, setMessage] = React.useState('');
+            const [operation, setOperation] = React.useState('embed');
+            const [keyId, setKeyId] = React.useState('');
+            const [keys, setKeys] = React.useState([]);
+            const [loading, setLoading] = React.useState(false);
+            const [error, setError] = React.useState('');
+            const [success, setSuccess] = React.useState('');
+            const [processedFileId, setProcessedFileId] = React.useState(null);
+            const navigate = useNavigate();
+            
+            React.useEffect(() => {
+                // Fetch user's keys
+                if (user) {
+                    axios.get('/keys/')
+                        .then(response => {
+                            setKeys(response.data);
+                            if (response.data.length > 0) {
+                                setKeyId(response.data[0].id);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching keys:', error);
+                            setError('Failed to load encryption keys');
+                        });
+                }
+            }, [user]);
+            
+            const handleFileChange = (e) => {
+                if (e.target.files.length > 0) {
+                    setFile(e.target.files[0]);
+                    setError('');
+                    setSuccess('');
+                }
+            };
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                setSuccess('');
+                
+                if (!file) {
+                    setError('Please select a file');
+                    setLoading(false);
+                    return;
+                }
+                
+                if (!keyId) {
+                    setError('Please select an encryption key');
+                    setLoading(false);
+                    return;
+                }
+                
+                if (operation === 'embed' && !message) {
+                    setError('Please enter a message to embed');
+                    setLoading(false);
+                    return;
+                }
+                
+                try {
+                    const result = await uploadFile(file, operation, message, keyId);
+                    setSuccess(operation === 'embed' ? 'Message embedded successfully!' : 'Message extracted successfully!');
+                    
+                    if (operation === 'embed') {
+                        setProcessedFileId(result.id);
+                    } else if (operation === 'extract') {
+                        setMessage(result.message);
+                    }
+                    
+                    setLoading(false);
+                } catch (error) {
+                    setError('File processing failed: ' + (error.response?.data?.error || error.message));
+                    setLoading(false);
+                }
+            };
+            
+            if (!user) {
+                return <Navigate to="/login" />;
+            }
+            
+            return (
+                <Container maxWidth="md" style={{ marginTop: '2rem' }}>
+                    <Paper style={{ padding: '2rem' }}>
+                        <Typography variant="h4" align="center" gutterBottom>
+                            {operation === 'embed' ? 'Embed Message in File' : 'Extract Message from File'}
+                        </Typography>
+                        
+                        {error && (
+                            <Typography color="error" align="center" style={{ marginBottom: '1rem' }}>
+                                {error}
+                            </Typography>
+                        )}
+                        
+                        {success && (
+                            <Typography color="primary" align="center" style={{ marginBottom: '1rem' }}>
+                                {success}
+                            </Typography>
+                        )}
+                        
+                        <form onSubmit={handleSubmit}>
+                            <Box mb={3}>
+                                <Typography variant="subtitle1" gutterBottom>Operation</Typography>
+                                <Box display="flex" justifyContent="center">
+                                    <Button
+                                        variant={operation === 'embed' ? 'contained' : 'outlined'}
+                                        color="primary"
+                                        onClick={() => setOperation('embed')}
+                                        style={{ marginRight: '1rem' }}
+                                    >
+                                        Embed Message
+                                    </Button>
+                                    <Button
+                                        variant={operation === 'extract' ? 'contained' : 'outlined'}
+                                        color="primary"
+                                        onClick={() => setOperation('extract')}
+                                    >
+                                        Extract Message
+                                    </Button>
+                                </Box>
+                            </Box>
+                            
+                            <Box mb={3}>
+                                <Typography variant="subtitle1" gutterBottom>Select File</Typography>
+                                <input
+                                    type="file"
+                                    onChange={handleFileChange}
+                                    style={{ width: '100%' }}
+                                />
+                                {file && (
+                                    <Typography variant="body2" style={{ marginTop: '0.5rem' }}>
+                                        Selected: {file.name}
+                                    </Typography>
+                                )}
+                            </Box>
+                            
+                            <Box mb={3}>
+                                <Typography variant="subtitle1" gutterBottom>Select Encryption Key</Typography>
+                                {keys.length > 0 ? (
+                                    <TextField
+                                        select
+                                        fullWidth
+                                        value={keyId}
+                                        onChange={(e) => setKeyId(e.target.value)}
+                                        variant="outlined"
+                                    >
+                                        {keys.map((key) => (
+                                            <option key={key.id} value={key.id}>
+                                                {key.name} ({key.key_type})
+                                            </option>
+                                        ))}
+                                    </TextField>
+                                ) : (
+                                    <Box textAlign="center">
+                                        <Typography color="error">No encryption keys found</Typography>
+                                        <Button
+                                            variant="contained"
+                                            color="primary"
+                                            component={Link}
+                                            to="/keys"
+                                            style={{ marginTop: '0.5rem' }}
+                                        >
+                                            Create a Key
+                                        </Button>
+                                    </Box>
+                                )}
+                            </Box>
+                            
+                            {operation === 'embed' ? (
+                                <Box mb={3}>
+                                    <Typography variant="subtitle1" gutterBottom>Message to Embed</Typography>
+                                    <TextField
+                                        multiline
+                                        rows={4}
+                                        fullWidth
+                                        variant="outlined"
+                                        placeholder="Enter your secret message here"
+                                        value={message}
+                                        onChange={(e) => setMessage(e.target.value)}
+                                    />
+                                </Box>
+                            ) : (
+                                message && (
+                                    <Box mb={3}>
+                                        <Typography variant="subtitle1" gutterBottom>Extracted Message</Typography>
+                                        <TextField
+                                            multiline
+                                            rows={4}
+                                            fullWidth
+                                            variant="outlined"
+                                            value={message}
+                                            InputProps={{ readOnly: true }}
+                                        />
+                                    </Box>
+                                )
+                            )}
+                            
+                            <Box display="flex" justifyContent="center">
+                                <Button
+                                    type="submit"
+                                    variant="contained"
+                                    color="primary"
+                                    disabled={loading || !file || !keyId || (operation === 'embed' && !message)}
+                                >
+                                    {loading ? <CircularProgress size={24} /> : (operation === 'embed' ? 'Embed Message' : 'Extract Message')}
+                                </Button>
+                            </Box>
+                            
+                            {processedFileId && operation === 'embed' && (
+                                <Box mt={3} textAlign="center">
+                                    <Button
+                                        variant="contained"
+                                        color="secondary"
+                                        onClick={() => window.location.href = `/api/files/${processedFileId}/download/`}
+                                    >
+                                        Download Processed File
+                                    </Button>
+                                </Box>
+                            )}
+                        </form>
+                    </Paper>
+                </Container>
+            );
+            const [message, setMessage] = React.useState('');
+            const [key, setKey] = React.useState('');
+            const [operation, setOperation] = React.useState('embed');
+            const [loading, setLoading] = React.useState(false);
+            const [error, setError] = React.useState('');
+            const [success, setSuccess] = React.useState('');
+            const [keys, setKeys] = React.useState([]);
+            
+            React.useEffect(() => {
+                if (user) {
+                    // Fetch user's keys
+                    axios.get('/keys/')
+                        .then(response => {
+                            setKeys(response.data);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching keys:', error);
+                        });
+                }
+            }, [user]);
+            
+            const handleFileChange = (e) => {
+                setFile(e.target.files[0]);
+            };
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                setSuccess('');
+                
+                if (!file) {
+                    setError('Please select a file');
+                    setLoading(false);
+                    return;
+                }
+                
+                if (operation === 'embed' && !message) {
+                    setError('Please enter a message to embed');
+                    setLoading(false);
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('operation', operation);
+                
+                if (operation === 'embed') {
+                    formData.append('message', message);
+                }
+                
+                if (key) {
+                    formData.append('key_id', key);
+                }
+                
+                try {
+                    const response = await axios.post('/files/process/', formData, {
+                        headers: {
+                            'Content-Type': 'multipart/form-data'
+                        }
+                    });
+                    
+                    setSuccess(operation === 'embed' ? 
+                        'Message embedded successfully! You can download the file from your files page.' : 
+                        `Extracted message: ${response.data.message}`);
+                    
+                    if (operation === 'extract' && response.data.message) {
+                        setMessage(response.data.message);
+                    }
+                } catch (error) {
+                    setError('Error processing file: ' + (error.response?.data?.error || error.message));
+                }
+                
+                setLoading(false);
+            };
+            
+            if (!user) {
+                return <Navigate to="/login" />;
+            }
+            
+            return (
+                <Container maxWidth="md" style={{ marginTop: '2rem' }}>
+                    <Paper style={{ padding: '2rem' }}>
+                        <Typography variant="h4" align="center" gutterBottom>
+                            {operation === 'embed' ? 'Embed Message in File' : 'Extract Message from File'}
+                        </Typography>
+                        
+                        {error && <Typography color="error" align="center">{error}</Typography>}
+                        {success && <Typography color="primary" align="center">{success}</Typography>}
+                        
+                        <form onSubmit={handleSubmit}>
+                            <Box mb={2}>
+                                <Button
+                                    variant={operation === 'embed' ? 'contained' : 'outlined'}
+                                    color="primary"
+                                    onClick={() => setOperation('embed')}
+                                    style={{ marginRight: '1rem' }}
+                                >
+                                    Embed Message
+                                </Button>
+                                <Button
+                                    variant={operation === 'extract' ? 'contained' : 'outlined'}
+                                    color="secondary"
+                                    onClick={() => setOperation('extract')}
+                                >
+                                    Extract Message
+                                </Button>
+                            </Box>
+                            
+                            <TextField
+                                label="Select File"
+                                type="file"
+                                fullWidth
+                                margin="normal"
+                                InputLabelProps={{ shrink: true }}
+                                onChange={handleFileChange}
+                            />
+                            
+                            {operation === 'embed' && (
+                                <TextField
+                                    label="Message to Embed"
+                                    fullWidth
+                                    margin="normal"
+                                    multiline
+                                    rows={4}
+                                    value={message}
+                                    onChange={(e) => setMessage(e.target.value)}
+                                />
+                            )}
+                            
+                            <TextField
+                                select
+                                label="Encryption Key (Optional)"
+                                fullWidth
+                                margin="normal"
+                                value={key}
+                                onChange={(e) => setKey(e.target.value)}
+                                SelectProps={{
+                                    native: true,
+                                }}
+                            >
+                                <option value="">None</option>
+                                {keys.map((k) => (
+                                    <option key={k.id} value={k.id}>{k.name}</option>
+                                ))}
+                            </TextField>
+                            
+                            {operation === 'extract' && message && (
+                                <TextField
+                                    label="Extracted Message"
+                                    fullWidth
+                                    margin="normal"
+                                    multiline
+                                    rows={4}
+                                    value={message}
+                                    InputProps={{ readOnly: true }}
+                                />
+                            )}
+                            
+                            <Box mt={2} display="flex" justifyContent="center">
+                                <Button
+                                    type="submit"
+                                    variant="contained"
+                                    color="primary"
+                                    disabled={loading}
+                                >
+                                    {loading ? <CircularProgress size={24} /> : 'Process File'}
+                                </Button>
+                            </Box>
+                        </form>
+                    </Paper>
+                </Container>
+            );
+        }
+        
+        // FileList Component
+        function FileList() {
+            const { user } = React.useContext(AuthContext);
+            const [files, setFiles] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+            const [error, setError] = React.useState('');
+            
+            React.useEffect(() => {
+                if (user) {
+                    // Fetch user's files
+                    axios.get('/files/')
+                        .then(response => {
+                            setFiles(response.data);
+                            setLoading(false);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching files:', error);
+                            setError('Error loading files');
+                            setLoading(false);
+                        });
+                }
+            }, [user]);
+            
+            const handleDownload = (fileId) => {
+                window.open(`/api/files/${fileId}/download/`, '_blank');
+            };
+            
+            const handleDelete = async (fileId) => {
+                try {
+                    await axios.delete(`/files/${fileId}/`);
+                    setFiles(files.filter(file => file.id !== fileId));
+                } catch (error) {
+                    console.error('Error deleting file:', error);
+                    setError('Error deleting file');
+                }
+            };
+            
+            if (!user) {
+                return <Navigate to="/login" />;
+            }
+            
+            return (
+                <Container maxWidth="md" style={{ marginTop: '2rem' }}>
+                    <Typography variant="h4" gutterBottom>Your Files</Typography>
+                    
+                    {error && <Typography color="error">{error}</Typography>}
+                    
+                    {loading ? (
+                        <Box display="flex" justifyContent="center" mt={4}>
+                            <CircularProgress />
+                        </Box>
+                    ) : files.length === 0 ? (
+                        <Paper style={{ padding: '2rem', textAlign: 'center' }}>
+                            <Typography variant="h6">No files found</Typography>
+                            <Button
+                                variant="contained"
+                                color="primary"
+                                component={Link}
+                                to="/upload"
+                                style={{ marginTop: '1rem' }}
+                            >
+                                Upload a File
+                            </Button>
+                        </Paper>
+                    ) : (
+                        <Grid container spacing={3}>
+                            {files.map(file => (
+                                <Grid item xs={12} key={file.id}>
+                                    <Card>
+                                        <CardContent>
+                                            <Typography variant="h6">{file.filename}</Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Uploaded: {new Date(file.created_at).toLocaleString()}
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Type: {file.file_type}
+                                            </Typography>
+                                        </CardContent>
+                                        <CardActions>
+                                            <Button size="small" onClick={() => handleDownload(file.id)}>Download</Button>
+                                            <Button size="small" color="error" onClick={() => handleDelete(file.id)}>Delete</Button>
+                                        </CardActions>
+                                    </Card>
+                                </Grid>
+                            ))}
+                        </Grid>
+                    )}
+                </Container>
+            );
+        }
+        
+        // KeyManagement Component
+        function KeyManagement() {
+            const { user } = React.useContext(AuthContext);
+            const [keys, setKeys] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+            const [error, setError] = React.useState('');
+            const [keyName, setKeyName] = React.useState('');
+            const [generating, setGenerating] = React.useState(false);
+            
+            React.useEffect(() => {
+                if (user) {
+                    // Fetch user's keys
+                    axios.get('/keys/')
+                        .then(response => {
+                            setKeys(response.data);
+                            setLoading(false);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching keys:', error);
+                            setError('Error loading keys');
+                            setLoading(false);
+                        });
+                }
+            }, [user]);
+            
+            const handleGenerateKey = async (e) => {
+                e.preventDefault();
+                
+                if (!keyName) {
+                    setError('Please enter a key name');
+                    return;
+                }
+                
+                setGenerating(true);
+                setError('');
+                
+                try {
+                    const response = await axios.post('/keys/', { name: keyName });
+                    setKeys([...keys, response.data]);
+                    setKeyName('');
+                } catch (error) {
+                    console.error('Error generating key:', error);
+                    setError('Error generating key');
+                }
+                
+                setGenerating(false);
+            };
+            
+            const handleDownload = (keyId) => {
+                window.open(`/api/keys/${keyId}/download/`, '_blank');
+            };
+            
+            const handleDelete = async (keyId) => {
+                try {
+                    await axios.delete(`/keys/${keyId}/`);
+                    setKeys(keys.filter(key => key.id !== keyId));
+                } catch (error) {
+                    console.error('Error deleting key:', error);
+                    setError('Error deleting key');
+                }
+            };
+            
+            if (!user) {
+                return <Navigate to="/login" />;
+            }
+            
+            return (
+                <Container maxWidth="md" style={{ marginTop: '2rem' }}>
+                    <Typography variant="h4" gutterBottom>Encryption Keys</Typography>
+                    
+                    <Paper style={{ padding: '2rem', marginBottom: '2rem' }}>
+                        <Typography variant="h5" gutterBottom>Generate New Key</Typography>
+                        {error && <Typography color="error">{error}</Typography>}
+                        
+                        <form onSubmit={handleGenerateKey}>
+                            <TextField
+                                label="Key Name"
+                                fullWidth
+                                margin="normal"
+                                value={keyName}
+                                onChange={(e) => setKeyName(e.target.value)}
+                            />
+                            
+                            <Box mt={2} display="flex" justifyContent="center">
+                                <Button
+                                    type="submit"
+                                    variant="contained"
+                                    color="primary"
+                                    disabled={generating}
+                                >
+                                    {generating ? <CircularProgress size={24} /> : 'Generate Key'}
+                                </Button>
+                            </Box>
+                        </form>
+                    </Paper>
+                    
+                    <Typography variant="h5" gutterBottom>Your Keys</Typography>
+                    
+                    {loading ? (
+                        <Box display="flex" justifyContent="center" mt={4}>
+                            <CircularProgress />
+                        </Box>
+                    ) : keys.length === 0 ? (
+                        <Paper style={{ padding: '2rem', textAlign: 'center' }}>
+                            <Typography variant="h6">No keys found</Typography>
+                            <Typography variant="body1" style={{ marginTop: '1rem' }}>
+                                Generate a key to encrypt and decrypt your messages
+                            </Typography>
+                        </Paper>
+                    ) : (
+                        <Grid container spacing={3}>
+                            {keys.map(key => (
+                                <Grid item xs={12} md={6} key={key.id}>
+                                    <Card>
+                                        <CardContent>
+                                            <Typography variant="h6">{key.name}</Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                Created: {new Date(key.created_at).toLocaleString()}
+                                            </Typography>
+                                        </CardContent>
+                                        <CardActions>
+                                            <Button size="small" onClick={() => handleDownload(key.id)}>Download</Button>
+                                            <Button size="small" color="error" onClick={() => handleDelete(key.id)}>Delete</Button>
+                                        </CardActions>
+                                    </Card>
+                                </Grid>
+                            ))}
+                        </Grid>
+                    )}
+                </Container>
+            );
+        }
+        
+        // PrivateRoute Component
+        function PrivateRoute({ children }) {
+            const { user, loading } = React.useContext(AuthContext);
+            
+            if (loading) {
+                return (
+                    <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+                        <CircularProgress />
+                    </Box>
+                );
+            }
+            
+            return user ? children : <Navigate to="/login" />;
+        }
+        
+        // App Component
+        function App() {
+            return (
+                <BrowserRouter>
+                    <AuthProvider>
+                        <Navbar />
+                        <Routes>
+                            <Route path="/" element={<Dashboard />} />
+                            <Route path="/login" element={<Login />} />
+                            <Route path="/register" element={<Register />} />
+                            <Route path="/upload" element={<FileUpload />} />
+                            <Route path="/files" element={<FileList />} />
+                            <Route path="/keys" element={<KeyManagement />} />
+                        </Routes>
+                    </AuthProvider>
+                </BrowserRouter>
+            );
+        }
+        
+        // Render the App
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(
+            <React.StrictMode>
+                <App />
+            </React.StrictMode>
+        );
+    </script>
+</body>
+</html>
